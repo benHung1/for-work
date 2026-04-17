@@ -75,6 +75,10 @@ async function scheduleDelayedReminder(event: any, checkinId: string) {
 export default defineEventHandler(async (event) => {
   const body = await readRawBody(event)
   const signature = getHeader(event, 'x-line-signature')
+  console.log('[webhook] request_received', {
+    hasBody: Boolean(body),
+    hasSignature: Boolean(signature),
+  })
 
   // 驗證 LINE 簽名
   const hmac = crypto
@@ -88,9 +92,21 @@ export default defineEventHandler(async (event) => {
 
   const payload = JSON.parse(body!)
   const events = payload.events
+  console.log('[webhook] payload_summary', {
+    eventsCount: Array.isArray(events) ? events.length : 0,
+  })
 
   for (const e of events) {
-    if (e.type !== 'message' || e.message.type !== 'text') continue
+    console.log('[webhook] event_received', {
+      type: e?.type,
+      messageType: e?.message?.type,
+      sourceType: e?.source?.type,
+      sourceUserId: e?.source?.userId,
+    })
+    if (e.type !== 'message' || e.message.type !== 'text') {
+      console.log('[webhook] event_skipped_non_text_message')
+      continue
+    }
 
     const userId = process.env.LINE_USER_ID!
     const today = new Date()
@@ -110,6 +126,7 @@ export default defineEventHandler(async (event) => {
       .single()
 
     if (!activeCheckin) {
+      console.log('[webhook] creating_clock_in_record')
       const { data: inserted, error } = await supabase
         .from('checkins')
         .insert({
@@ -127,10 +144,14 @@ export default defineEventHandler(async (event) => {
       }
 
       await scheduleDelayedReminder(event, inserted.id)
+      console.log('[webhook] clock_in_record_created_and_reminder_scheduled', {
+        checkinId: inserted.id,
+      })
       await sendLineMessage('✅ 已收到回覆，已記錄上班打卡！')
       continue
     }
 
+    console.log('[webhook] closing_active_checkin', { checkinId: activeCheckin.id })
     await supabase
       .from('checkins')
       .update({ clock_out_at: new Date().toISOString() })
