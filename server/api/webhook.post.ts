@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import crypto from 'crypto'
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -43,8 +44,7 @@ export default defineEventHandler(async (event) => {
     const userId = process.env.LINE_USER_ID!
 
     // 你回「打卡了」→ 記錄下班時間，停止提醒
-    if(text.includes('打卡', '上班', '下班')) {
-     {
+    if(text.includes('打卡了')) {
       const { data } = await supabase
         .from('checkins')
         .select('*')
@@ -67,7 +67,7 @@ export default defineEventHandler(async (event) => {
     }
 
     // 你回「上班」→ 手動觸發上班打卡（不靠 GPS 的備用方案）
-    if (text.includes('上班', '下班', '打卡')) {
+    if (text.includes('上班了')) {
       await supabase.from('checkins').insert({
         user_id: userId,
         clock_in_at: new Date().toISOString(),
