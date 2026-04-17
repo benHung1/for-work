@@ -32,13 +32,17 @@ async function sendLineMessage(message: string) {
 }
 
 async function scheduleDelayedReminder(event: any, checkinId: string) {
-  const host = getHeader(event, 'x-forwarded-host') || getHeader(event, 'host')
-  if (!host) {
+  const rawHost = getHeader(event, 'x-forwarded-host') || getHeader(event, 'host')
+  if (!rawHost) {
     throw createError({ statusCode: 500, message: 'Host header missing' })
   }
 
-  const protocol = getHeader(event, 'x-forwarded-proto') || 'https'
-  const reminderUrl = `${protocol}://${host}/api/remind`
+  const normalizedHost = (rawHost.split(',')[0] || '')
+    .trim()
+    .replace(/^https?:\/\//, '')
+  const protocolHeader = getHeader(event, 'x-forwarded-proto') || 'https'
+  const normalizedProtocol = (protocolHeader.split(',')[0] || '').trim() || 'https'
+  const reminderUrl = `${normalizedProtocol}://${normalizedHost}/api/remind`
   const qstashToken = process.env.QSTASH_TOKEN
   const qstashBaseUrl = (process.env.QSTASH_URL || 'https://qstash.upstash.io').replace(
     /\/$/,
@@ -71,7 +75,7 @@ async function scheduleDelayedReminder(event: any, checkinId: string) {
     const text = await res.text()
     throw createError({
       statusCode: 502,
-      message: `Failed to schedule reminder: ${res.status} ${text}`,
+      message: `Failed to schedule reminder: ${res.status} ${text} (destination=${reminderUrl})`,
     })
   }
 }
