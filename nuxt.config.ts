@@ -4,7 +4,7 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   nitro: {
   scheduledTasks: {
-    "* * * * *": ["api/cron"]
+    "* * * * *": ["/api/cron"]
   }
 }
 })
