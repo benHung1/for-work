@@ -6,7 +6,7 @@ const supabase = createClient(
 )
 
 async function sendLineMessage(userId: string, message: string) {
-  await fetch('https://api.line.me/v2/bot/message/push', {
+  const res = await fetch('https://api.line.me/v2/bot/message/push', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -17,6 +17,14 @@ async function sendLineMessage(userId: string, message: string) {
       messages: [{ type: 'text', text: message }],
     }),
   })
+
+  if (!res.ok) {
+    const errorText = await res.text()
+    throw createError({
+      statusCode: 502,
+      message: `LINE push failed: ${res.status} ${errorText}`,
+    })
+  }
 }
 
 export default defineEventHandler(async (event) => {
