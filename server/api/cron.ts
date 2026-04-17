@@ -28,6 +28,8 @@ export default defineEventHandler(async (event) => {
 
   const now = new Date()
   const userId = process.env.LINE_USER_ID!
+  const query = getQuery(event)
+  const force = query.force === '1'
 
   // 找今天有上班打卡、但還沒下班打卡的紀錄
   const today = new Date()
@@ -43,19 +45,27 @@ export default defineEventHandler(async (event) => {
     .limit(1)
     .single()
 
-  if (!checkin) return { status: 'no_active_checkin' }
+  if (!checkin) {
+    if (force) {
+      await sendLineMessage(userId, '🧪 測試通知：Cron 與 LINE 推播正常')
+      return { status: 'forced_test_message_sent' }
+    }
+    return { status: 'no_active_checkin' }
+  }
 
   const clockInAt = new Date(checkin.clock_in_at)
   const diffMs = now.getTime() - clockInAt.getTime()
   const diffHours = diffMs / (1000 * 60 * 60)
 
-  // 9.5 小時後開始提醒
-  if (diffHours >= 9.5) {
+  // 9.5 小時後開始提醒；force=1 可強制測試
+  if (diffHours >= 9.5 || force) {
     const diffMinutes = Math.floor(diffMs / (1000 * 60))
     const overMinutes = Math.floor((diffHours - 9.5) * 60)
 
     let message = ''
-    if (overMinutes === 0) {
+    if (force) {
+      message = '🧪 測試通知：Cron 已成功觸發提醒流程'
+    } else if (overMinutes === 0) {
       message = '⏰ 已經上班 9.5 小時了！記得去 Flygo 打下班卡！'
     } else {
       message = `🔔 你已經超時 ${overMinutes} 分鐘了！快去打下班卡！\n\n打完卡後回覆「打卡了」讓我停止提醒 🙏`
