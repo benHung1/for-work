@@ -57,19 +57,17 @@ async function scheduleDelayedReminder(event: any, checkinId: string) {
     })
   }
 
-  const res = await fetch(
-    `${qstashBaseUrl}/v2/publish/${encodeURIComponent(reminderUrl)}`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${qstashToken}`,
-        'Content-Type': 'application/json',
-        'Upstash-Delay': '570m',
-        'Upstash-Forward-Authorization': `Bearer ${reminderSecret}`,
-      },
-      body: JSON.stringify({ checkinId }),
-    }
-  )
+  const res = await fetch(`${qstashBaseUrl}/v2/publish/${reminderUrl}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${qstashToken}`,
+      'Content-Type': 'application/json',
+      'Upstash-Delay': '570m',
+      'Upstash-Method': 'POST',
+      'Upstash-Forward-Authorization': `Bearer ${reminderSecret}`,
+    },
+    body: JSON.stringify({ checkinId }),
+  })
 
   if (!res.ok) {
     const text = await res.text()
