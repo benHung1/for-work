@@ -4,26 +4,29 @@ const supabase = createClient(
   process.env.SUPABASE_URL!,
   process.env.SUPABASE_ANON_KEY!
 )
+const NOTIFICATION_REPEAT_COUNT = 5
 
 async function sendLineMessage(userId: string, message: string) {
-  const res = await fetch('https://api.line.me/v2/bot/message/push', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}`,
-    },
-    body: JSON.stringify({
-      to: userId,
-      messages: [{ type: 'text', text: message }],
-    }),
-  })
-
-  if (!res.ok) {
-    const errorText = await res.text()
-    throw createError({
-      statusCode: 502,
-      message: `LINE push failed: ${res.status} ${errorText}`,
+  for (let i = 0; i < NOTIFICATION_REPEAT_COUNT; i++) {
+    const res = await fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}`,
+      },
+      body: JSON.stringify({
+        to: userId,
+        messages: [{ type: 'text', text: message }],
+      }),
     })
+
+    if (!res.ok) {
+      const errorText = await res.text()
+      throw createError({
+        statusCode: 502,
+        message: `LINE push failed: ${res.status} ${errorText}`,
+      })
+    }
   }
 }
 
@@ -58,7 +61,8 @@ export default defineEventHandler(async (event) => {
       await sendLineMessage(userId, '🧪 測試通知：Cron 與 LINE 推播正常')
       return { status: 'forced_test_message_sent' }
     }
-    return { status: 'no_active_checkin' }
+    await sendLineMessage(userId, '🔔 打卡！ 打卡! 打卡')
+    return { status: 'morning_clock_in_reminder_sent' }
   }
 
   const clockInAt = new Date(checkin.clock_in_at)
@@ -76,7 +80,7 @@ export default defineEventHandler(async (event) => {
     } else if (overMinutes === 0) {
       message = '⏰ 已經上班 9.5 小時了！記得去 Flygo 打下班卡！'
     } else {
-      message = `🔔 你已經超時 ${overMinutes} 分鐘了！快去打下班卡！\n\n打完卡後回覆「打卡了」讓我停止提醒 🙏`
+      message = `🔔 你已經超時 ${overMinutes} 分鐘了！快去打下班卡！\n\n打完卡後回覆任意訊息，我就會記錄下班打卡。`
     }
 
     await sendLineMessage(userId, message)
