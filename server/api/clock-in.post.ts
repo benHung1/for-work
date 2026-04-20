@@ -1,4 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
+import { taipeiDayBoundsUtc } from '../utils/taipeiDay'
+import { haversineMeters } from '../utils/geo'
+import { scheduleDelayedReminder } from '../utils/scheduleDelayedReminder'
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -30,51 +33,19 @@ async function sendLineMessage(userId: string, message: string) {
   }
 }
 
-async function scheduleDelayedReminder(event: any, checkinId: string) {
-  const rawHost = getHeader(event, 'x-forwarded-host') || getHeader(event, 'host')
-  if (!rawHost) {
-    throw createError({ statusCode: 500, message: 'Host header missing' })
+/** 內湖基湖路32號參考點；可用 COMPANY_LATITUDE / COMPANY_LONGITUDE 覆寫 */
+const DEFAULT_COMPANY_LAT = 25.080826
+const DEFAULT_COMPANY_LNG = 121.56482
+
+function firstFiniteNumber(...candidates: unknown[]): number | undefined {
+  for (const c of candidates) {
+    if (typeof c === 'number' && Number.isFinite(c)) return c
+    if (typeof c === 'string' && c.trim() !== '') {
+      const n = Number(c)
+      if (Number.isFinite(n)) return n
+    }
   }
-
-  const normalizedHost = (rawHost.split(',')[0] || '')
-    .trim()
-    .replace(/^https?:\/\//, '')
-  const protocolHeader = getHeader(event, 'x-forwarded-proto') || 'https'
-  const normalizedProtocol = (protocolHeader.split(',')[0] || '').trim() || 'https'
-  const reminderUrl = `${normalizedProtocol}://${normalizedHost}/api/remind`
-  const qstashToken = process.env.QSTASH_TOKEN
-  const qstashBaseUrl = (process.env.QSTASH_URL || 'https://qstash.upstash.io').replace(
-    /\/$/,
-    ''
-  )
-  const reminderSecret = process.env.REMINDER_SECRET || process.env.CRON_SECRET
-
-  if (!qstashToken || !reminderSecret) {
-    throw createError({
-      statusCode: 500,
-      message: 'QSTASH_TOKEN or REMINDER_SECRET is missing',
-    })
-  }
-
-  const res = await fetch(`${qstashBaseUrl}/v2/publish/${reminderUrl}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${qstashToken}`,
-      'Content-Type': 'application/json',
-      'Upstash-Delay': '570m',
-      'Upstash-Method': 'POST',
-      'Upstash-Forward-Authorization': `Bearer ${reminderSecret}`,
-    },
-    body: JSON.stringify({ checkinId }),
-  })
-
-  if (!res.ok) {
-    const text = await res.text()
-    throw createError({
-      statusCode: 502,
-      message: `Failed to schedule reminder: ${res.status} ${text} (destination=${reminderUrl})`,
-    })
-  }
+  return undefined
 }
 
 export default defineEventHandler(async (event) => {
@@ -86,17 +57,63 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  const query = getQuery(event)
+  let body: Record<string, unknown> = {}
+  try {
+    body = (await readBody(event)) as Record<string, unknown>
+  } catch {
+    body = {}
+  }
+
+  const lat = firstFiniteNumber(
+    body.latitude,
+    body.lat,
+    query.latitude,
+    query.lat
+  )
+  const lng = firstFiniteNumber(
+    body.longitude,
+    body.lng,
+    body.lon,
+    query.longitude,
+    query.lng,
+    query.lon
+  )
+
+  if (lat === undefined || lng === undefined) {
+    throw createError({
+      statusCode: 400,
+      message: '缺少座標：請在 POST body 或 query 帶上 latitude、longitude（或 lat、lng）',
+    })
+  }
+
+  const companyLat = Number(process.env.COMPANY_LATITUDE ?? DEFAULT_COMPANY_LAT)
+  const companyLng = Number(process.env.COMPANY_LONGITUDE ?? DEFAULT_COMPANY_LNG)
+  const radiusM = Number(process.env.COMPANY_RADIUS_METERS ?? 50)
+
+  if (!Number.isFinite(companyLat) || !Number.isFinite(companyLng) || !Number.isFinite(radiusM)) {
+    throw createError({ statusCode: 500, message: '公司座標或半徑設定無效' })
+  }
+
+  const distanceM = haversineMeters(lat, lng, companyLat, companyLng)
+  if (distanceM > radiusM) {
+    throw createError({
+      statusCode: 403,
+      message: `不在公司 ${radiusM} 公尺範圍內（約 ${Math.round(distanceM)} 公尺）`,
+    })
+  }
+
   const userId = process.env.LINE_USER_ID!
 
-  // 檢查今天是否已有打卡紀錄
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  // 檢查「台灣日曆今天」是否已有打卡紀錄
+  const { start: taipeiDayStart, end: taipeiDayEnd } = taipeiDayBoundsUtc()
 
   const { data: latestToday } = await supabase
     .from('checkins')
     .select('*')
     .eq('user_id', userId)
-    .gte('clock_in_at', today.toISOString())
+    .gte('clock_in_at', taipeiDayStart)
+    .lt('clock_in_at', taipeiDayEnd)
     .order('created_at', { ascending: false })
     .limit(1)
     .single()

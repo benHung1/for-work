@@ -1,5 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
+import { taipeiDayBoundsUtc } from '../utils/taipeiDay'
+import {
+  getUnknownErrorMessage,
+  parseLineUserTextMessageEvents,
+} from '../utils/lineWebhook'
+import { scheduleDelayedReminder } from '../utils/scheduleDelayedReminder'
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -31,53 +37,6 @@ async function sendLineMessage(message: string) {
   }
 }
 
-async function scheduleDelayedReminder(event: any, checkinId: string) {
-  const rawHost = getHeader(event, 'x-forwarded-host') || getHeader(event, 'host')
-  if (!rawHost) {
-    throw createError({ statusCode: 500, message: 'Host header missing' })
-  }
-
-  const normalizedHost = (rawHost.split(',')[0] || '')
-    .trim()
-    .replace(/^https?:\/\//, '')
-  const protocolHeader = getHeader(event, 'x-forwarded-proto') || 'https'
-  const normalizedProtocol = (protocolHeader.split(',')[0] || '').trim() || 'https'
-  const reminderUrl = `${normalizedProtocol}://${normalizedHost}/api/remind`
-  const qstashToken = process.env.QSTASH_TOKEN
-  const qstashBaseUrl = (process.env.QSTASH_URL || 'https://qstash.upstash.io').replace(
-    /\/$/,
-    ''
-  )
-  const reminderSecret = process.env.REMINDER_SECRET || process.env.CRON_SECRET
-
-  if (!qstashToken || !reminderSecret) {
-    throw createError({
-      statusCode: 500,
-      message: 'QSTASH_TOKEN or REMINDER_SECRET is missing',
-    })
-  }
-
-  const res = await fetch(`${qstashBaseUrl}/v2/publish/${reminderUrl}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${qstashToken}`,
-      'Content-Type': 'application/json',
-      'Upstash-Delay': '570m',
-      'Upstash-Method': 'POST',
-      'Upstash-Forward-Authorization': `Bearer ${reminderSecret}`,
-    },
-    body: JSON.stringify({ checkinId }),
-  })
-
-  if (!res.ok) {
-    const text = await res.text()
-    throw createError({
-      statusCode: 502,
-      message: `Failed to schedule reminder: ${res.status} ${text} (destination=${reminderUrl})`,
-    })
-  }
-}
-
 export default defineEventHandler(async (event) => {
   const body = await readRawBody(event)
   const signature = getHeader(event, 'x-line-signature')
@@ -96,29 +55,23 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 401, message: 'Invalid signature' })
   }
 
-  const payload = JSON.parse(body!)
-  const events = payload.events
+  const textEvents = parseLineUserTextMessageEvents(body!)
   console.log('[webhook] payload_summary', {
-    eventsCount: Array.isArray(events) ? events.length : 0,
+    eventsCount: textEvents.length,
   })
 
-  for (const e of events) {
+  for (const e of textEvents) {
     console.log('[webhook] event_received', {
-      type: e?.type,
-      messageType: e?.message?.type,
-      sourceType: e?.source?.type,
-      sourceUserId: e?.source?.userId,
+      type: e.type,
+      messageType: e.message.type,
+      sourceType: e.source?.type,
+      sourceUserId: e.source?.userId,
     })
-    if (e.type !== 'message' || e.message.type !== 'text') {
-      console.log('[webhook] event_skipped_non_text_message')
-      continue
-    }
 
     const userId = process.env.LINE_USER_ID!
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
+    const { start: taipeiDayStart, end: taipeiDayEnd } = taipeiDayBoundsUtc()
 
-    // 任意文字都視為打卡回報，但一天最多一組上下班：
+    // 任意文字都視為打卡回報，但一天最多一組上下班（台灣日曆）：
     // - 今天沒有紀錄 => 建立 clock_in
     // - 今天有未下班紀錄 => 補上 clock_out
     // - 今天已完整上下班 => 不再重開新紀錄
@@ -126,7 +79,8 @@ export default defineEventHandler(async (event) => {
       .from('checkins')
       .select('*')
       .eq('user_id', userId)
-      .gte('clock_in_at', today.toISOString())
+      .gte('clock_in_at', taipeiDayStart)
+      .lt('clock_in_at', taipeiDayEnd)
       .order('created_at', { ascending: false })
       .limit(1)
       .single()
@@ -155,11 +109,11 @@ export default defineEventHandler(async (event) => {
         console.log('[webhook] clock_in_record_created_and_reminder_scheduled', {
           checkinId: inserted.id,
         })
-      } catch (err: any) {
+      } catch (err: unknown) {
         reminderScheduled = false
         console.error('[webhook] schedule_reminder_failed', {
           checkinId: inserted.id,
-          error: err?.message || String(err),
+          error: getUnknownErrorMessage(err),
         })
       }
 

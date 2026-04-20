@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { taipeiDayBoundsUtc } from '../utils/taipeiDay'
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -31,6 +32,7 @@ async function sendLineMessage(userId: string, message: string) {
 }
 
 export default defineEventHandler(async (event) => {
+  // Vercel Cron 表達式為 UTC：vercel.json `55 0 * * *` = 台灣時間每日 08:55（無夏令時間）
   // 確保只有 Vercel Cron 能呼叫這支 API
   const authHeader = getHeader(event, 'authorization')
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -42,16 +44,16 @@ export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const force = query.force === '1'
 
-  // 找今天有上班打卡、但還沒下班打卡的紀錄
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  // 找「台灣日曆今天」有上班打卡、但還沒下班打卡的紀錄
+  const { start: taipeiDayStart, end: taipeiDayEnd } = taipeiDayBoundsUtc()
 
   const { data: checkin } = await supabase
     .from('checkins')
     .select('*')
     .eq('user_id', userId)
     .is('clock_out_at', null)
-    .gte('clock_in_at', today.toISOString())
+    .gte('clock_in_at', taipeiDayStart)
+    .lt('clock_in_at', taipeiDayEnd)
     .order('created_at', { ascending: false })
     .limit(1)
     .single()
