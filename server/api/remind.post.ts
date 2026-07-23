@@ -43,10 +43,7 @@ export default defineEventHandler(async (event) => {
       return { status: 'skipped_off_day' }
     }
 
-    await sendLineMessage(
-      userId,
-      '⏰ 已經到下班時間了！記得去 Flygo 打下班卡！\n\n打完卡後回覆任意訊息，我就會記錄下班打卡。'
-    )
+    await sendLineMessage(userId, '恭喜～又熬過一天！ 記得去 Flygo 打下班卡！')
     return { status: 'evening_clock_out_reminder_sent' }
   }
 

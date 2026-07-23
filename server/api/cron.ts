@@ -49,7 +49,7 @@ export default defineEventHandler(async (event) => {
     return { status: 'forced_test_message_sent' }
   }
 
-  await sendLineMessage(userId, '🔔 打卡！記得去 Flygo 打上班卡！')
+  await sendLineMessage(userId, '加油！　上班就是為了下班～記得去 Flygo 打上班卡！')
 
   try {
     await scheduleEveningReminder(event)

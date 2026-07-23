@@ -142,11 +142,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // 下班提醒由早上 08:55 cron + QStash 固定排到 18:25，不依賴這支
-  await sendLineMessage(
-    userId,
-    '✅ 偵測到你到公司了！記得在 Flygo 打上班卡，今天 18:25 會提醒你打下班卡 🕐'
-  )
+  await sendLineMessage(userId, ' 偵測到你到公司了！記得去 Flygo 打上班卡！')
 
   return { status: 'ok' }
 })
