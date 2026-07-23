@@ -1,7 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { taipeiDayBoundsUtc } from '../utils/taipeiDay'
 import { haversineMeters } from '../utils/geo'
-import { scheduleDelayedReminder } from '../utils/scheduleDelayedReminder'
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -143,12 +142,10 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  await scheduleDelayedReminder(event, inserted.id)
-
-  // 通知你 Bot 已收到
+  // 下班提醒由早上 08:55 cron + QStash 固定排到 18:25，不依賴這支
   await sendLineMessage(
     userId,
-    '✅ 偵測到你到公司了！記得在 Flygo 打上班卡，9.5 小時後會提醒你打下班卡 🕐'
+    '✅ 偵測到你到公司了！記得在 Flygo 打上班卡，今天 18:25 會提醒你打下班卡 🕐'
   )
 
   return { status: 'ok' }

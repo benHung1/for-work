@@ -1,11 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 import { taipeiDayBoundsUtc } from '../utils/taipeiDay'
-import {
-  getUnknownErrorMessage,
-  parseLineUserTextMessageEvents,
-} from '../utils/lineWebhook'
-import { scheduleDelayedReminder } from '../utils/scheduleDelayedReminder'
+import { parseLineUserTextMessageEvents } from '../utils/lineWebhook'
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -103,25 +99,8 @@ export default defineEventHandler(async (event) => {
         })
       }
 
-      let reminderScheduled = true
-      try {
-        await scheduleDelayedReminder(event, inserted.id)
-        console.log('[webhook] clock_in_record_created_and_reminder_scheduled', {
-          checkinId: inserted.id,
-        })
-      } catch (err: unknown) {
-        reminderScheduled = false
-        console.error('[webhook] schedule_reminder_failed', {
-          checkinId: inserted.id,
-          error: getUnknownErrorMessage(err),
-        })
-      }
-
-      if (reminderScheduled) {
-        await sendLineMessage('✅ 已收到回覆，已記錄上班打卡！')
-      } else {
-        await sendLineMessage('✅ 已記錄上班打卡，但延遲提醒排程失敗，請稍後重試一次。')
-      }
+      console.log('[webhook] clock_in_record_created', { checkinId: inserted.id })
+      await sendLineMessage('✅ 已收到回覆，已記錄上班打卡！今天 18:25 會提醒你打下班卡。')
       continue
     }
 

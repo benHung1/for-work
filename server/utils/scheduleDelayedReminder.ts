@@ -1,10 +1,13 @@
 import type { H3Event } from 'h3'
 import { createError, getHeader } from 'h3'
 
-export async function scheduleDelayedReminder(
-  event: H3Event,
-  checkinId: string
-): Promise<void> {
+/** 上班提醒後固定隔 9.5 小時（570 分）觸發下班提醒 → 08:55 → 18:25 */
+const EVENING_DELAY = '570m'
+
+/**
+ * 由早上 cron 呼叫：不論使用者有沒有回覆 LINE，都排定下班提醒。
+ */
+export async function scheduleEveningReminder(event: H3Event): Promise<void> {
   const rawHost = getHeader(event, 'x-forwarded-host') || getHeader(event, 'host')
   if (!rawHost) {
     throw createError({ statusCode: 500, message: 'Host header missing' })
@@ -35,11 +38,11 @@ export async function scheduleDelayedReminder(
     headers: {
       Authorization: `Bearer ${qstashToken}`,
       'Content-Type': 'application/json',
-      'Upstash-Delay': '570m',
+      'Upstash-Delay': EVENING_DELAY,
       'Upstash-Method': 'POST',
       'Upstash-Forward-Authorization': `Bearer ${reminderSecret}`,
     },
-    body: JSON.stringify({ checkinId }),
+    body: JSON.stringify({ phase: 'evening' }),
   })
 
   if (!res.ok) {
