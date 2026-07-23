@@ -1,11 +1,11 @@
 import crypto from 'crypto'
 import { parseLineSubscriptionEvents } from '../utils/lineWebhook'
 import { pushLineText } from '../utils/linePush'
+import { insertIncomingMessage } from '../utils/messages'
 import { activateSubscriber, deactivateSubscriber } from '../utils/subscribers'
 
 /**
- * LINE Webhook：加好友／傳訊 → 訂閱；封鎖 → 取消訂閱。
- * 平日提醒仍由 cron 單向推播，不需回覆內容。
+ * LINE Webhook：加好友／傳訊 → 訂閱；文字訊息寫入 messages；封鎖 → 取消訂閱。
  */
 export default defineEventHandler(async (event) => {
   const body = await readRawBody(event)
@@ -33,9 +33,17 @@ export default defineEventHandler(async (event) => {
       continue
     }
 
-    // follow 或任意文字 → 註冊／重新啟用
     console.log('[webhook] activate', { userId, type: e.type })
     await activateSubscriber(userId)
+
+    if (e.type === 'message') {
+      console.log('[webhook] store_message', { userId })
+      await insertIncomingMessage({
+        userId,
+        text: e.message.text,
+        lineMessageId: e.message.id,
+      })
+    }
 
     if (e.type === 'follow') {
       await pushLineText(

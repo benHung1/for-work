@@ -16,7 +16,7 @@ export type LineUnfollowEvent = {
 
 export type LineUserTextMessageEvent = {
   type: 'message'
-  message: { type: 'text' }
+  message: { type: 'text'; id?: string; text: string }
   source?: LineSource
 }
 
@@ -62,9 +62,14 @@ export function parseLineSubscriptionEvents(body: string): LineSubscriptionEvent
     if (item.type === 'message') {
       const message = item.message
       if (!isRecord(message) || message.type !== 'text') continue
+      if (typeof message.text !== 'string') continue
       out.push({
         type: 'message',
-        message: { type: 'text' },
+        message: {
+          type: 'text',
+          text: message.text,
+          id: typeof message.id === 'string' ? message.id : undefined,
+        },
         source: parseSource(item.source),
       })
     }
